@@ -805,7 +805,7 @@ class Metadata(object):
 
 
 
-  def load_signing_key(self, key):
+  def load_signing_key(self, key, mark_role_as_dirty=False):
     """
     <Purpose>
       Load the role key, which must contain the private portion, so that role
@@ -822,6 +822,12 @@ class Metadata(object):
         It must contain the private key, so that role signatures may be
         generated when writeall() or write() is eventually called to generate
         valid metadata files.
+
+      mark_role_as_dirty:
+        A boolean indicating whether the updated 'roleinfo' for 'rolename'
+        should be marked as dirty.  The caller might not want to mark
+        'rolename' as dirty if it is loading metadata from disk and only wants
+        to populate roledb.py.
 
     <Exceptions>
       securesystemslib.exceptions.FormatError, if 'key' is improperly formatted.
@@ -860,12 +866,12 @@ class Metadata(object):
     if key['keyid'] not in roleinfo['signing_keyids']:
       roleinfo['signing_keyids'].append(key['keyid'])
 
-      tuf.roledb.update_roleinfo(self.rolename, roleinfo,
+      tuf.roledb.update_roleinfo(self.rolename, roleinfo, mark_role_as_dirty,
           repository_name=self._repository_name)
 
 
 
-  def unload_signing_key(self, key):
+  def unload_signing_key(self, key, mark_role_as_dirty=False):
     """
     <Purpose>
       Remove a previously loaded role private key (i.e., load_signing_key()).
@@ -880,6 +886,12 @@ class Metadata(object):
       key:
         The role key to be unloaded, conformant to
         'securesystemslib.formats.ANYKEY_SCHEMA'.
+
+      mark_role_as_dirty:
+        A boolean indicating whether the updated 'roleinfo' for 'rolename'
+        should be marked as dirty.  The caller might not want to mark
+        'rolename' as dirty if it is loading metadata from disk and only wants
+        to populate roledb.py.
 
     <Exceptions>
       securesystemslib.exceptions.FormatError, if the 'key' argument is
@@ -910,7 +922,7 @@ class Metadata(object):
     if key['keyid'] in roleinfo['signing_keyids']:
       roleinfo['signing_keyids'].remove(key['keyid'])
 
-      tuf.roledb.update_roleinfo(self.rolename, roleinfo,
+      tuf.roledb.update_roleinfo(self.rolename, roleinfo, mark_role_as_dirty,
           repository_name=self._repository_name)
 
     else:
@@ -981,7 +993,7 @@ class Metadata(object):
 
 
 
-  def remove_signature(self, signature):
+  def remove_signature(self, signature, mark_role_as_dirty=True):
     """
     <Purpose>
       Remove a previously loaded, or added, role 'signature'.  A role must
@@ -995,6 +1007,12 @@ class Metadata(object):
       signature:
         The role signature to remove, conformant to
         'securesystemslib.formats.SIGNATURE_SCHEMA'.
+
+      mark_role_as_dirty:
+        A boolean indicating whether the updated 'roleinfo' for 'rolename'
+        should be marked as dirty.  The caller might not want to mark
+        'rolename' as dirty if it is loading metadata from disk and only wants
+        to populate roledb.py.
 
     <Exceptions>
       securesystemslib.exceptions.FormatError, if the 'signature' argument is
@@ -1021,7 +1039,7 @@ class Metadata(object):
     if signature in roleinfo['signatures']:
       roleinfo['signatures'].remove(signature)
 
-      tuf.roledb.update_roleinfo(self.rolename, roleinfo,
+      tuf.roledb.update_roleinfo(self.rolename, roleinfo, mark_role_as_dirty,
           repository_name=self._repository_name)
 
     else:
