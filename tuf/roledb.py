@@ -639,7 +639,6 @@ def remove_role(rolename, repository_name='default'):
   _check_rolename(rolename, repository_name)
 
   global _roledb_dict
-  global _dirty_roles
 
   # 'rolename' was verified to exist in _check_rolename().
   # Remove 'rolename' now.
@@ -741,7 +740,6 @@ def get_roleinfo(rolename, repository_name='default'):
   _check_rolename(rolename, repository_name)
 
   global _roledb_dict
-  global _dirty_roles
 
   return copy.deepcopy(_roledb_dict[repository_name][rolename])
 
@@ -794,7 +792,6 @@ def get_role_keyids(rolename, repository_name='default'):
   _check_rolename(rolename, repository_name)
 
   global _roledb_dict
-  global _dirty_roles
 
   roleinfo = _roledb_dict[repository_name][rolename]
 
@@ -846,7 +843,6 @@ def get_role_threshold(rolename, repository_name='default'):
   _check_rolename(rolename, repository_name)
 
   global _roledb_dict
-  global _dirty_roles
 
   roleinfo = _roledb_dict[repository_name][rolename]
 
@@ -897,7 +893,6 @@ def get_role_paths(rolename, repository_name='default'):
   _check_rolename(rolename, repository_name)
 
   global _roledb_dict
-  global _dirty_roles
 
   roleinfo = _roledb_dict[repository_name][rolename]
 
@@ -957,7 +952,6 @@ def get_delegated_rolenames(rolename, repository_name='default'):
   _check_rolename(rolename, repository_name)
 
   global _roledb_dict
-  global _dirty_roles
 
   # get_roleinfo() raises a 'securesystemslib.exceptions.InvalidNameError' if
   # 'repository_name' does not exist in the role database.
