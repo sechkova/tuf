@@ -812,6 +812,7 @@ class TestUpdater(unittest_toolbox.Modified_TestCase):
 
     repository = repo_tool.load_repository(self.repository_directory)
     repository.timestamp.load_signing_key(self.role_keys['timestamp']['private'])
+    repository.mark_dirty(['timestamp'])
     repository.writeall()
 
     # Move the staged metadata to the "live" metadata.
@@ -1286,6 +1287,7 @@ class TestUpdater(unittest_toolbox.Modified_TestCase):
     repository.snapshot.load_signing_key(self.role_keys['snapshot']['private'])
     repository.timestamp.load_signing_key(self.role_keys['timestamp']['private'])
 
+    repository.mark_dirty(['snapshot', 'targets', 'timestamp', 'root'])
     repository.writeall(consistent_snapshot=True)
 
     # Move the staged metadata to the "live" metadata.

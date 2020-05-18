@@ -197,6 +197,7 @@ class TestSlowRetrievalAttack(unittest_toolbox.Modified_TestCase):
     repository.snapshot.load_signing_key(snapshot_private)
     repository.timestamp.load_signing_key(timestamp_private)
 
+    repository.mark_dirty(['targets', 'snapshot', 'timestamp'])
     repository.writeall()
 
     # Move the staged metadata to the "live" metadata.
