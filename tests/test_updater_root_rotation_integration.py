@@ -70,6 +70,7 @@ logger = logging.getLogger(__name__)
 repo_tool.disable_console_log_messages()
 
 
+
 class TestUpdater(unittest_toolbox.Modified_TestCase):
 
   @classmethod

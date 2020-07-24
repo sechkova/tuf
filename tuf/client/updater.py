@@ -163,6 +163,12 @@ DEFAULT_ROOT_UPPERLENGTH = tuf.settings.DEFAULT_ROOT_REQUIRED_LENGTH
 # See 'log.py' to learn how logging is handled in TUF.
 logger = logging.getLogger(__name__)
 
+formatter = logging.Formatter('[%(levelname)s]:%(name)s:%(funcName)s:%(message)s')
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 # Disable 'iso8601' logger messages to prevent 'iso8601' from clogging the
 # log file.
 iso8601_logger = logging.getLogger('iso8601')
@@ -777,6 +783,16 @@ class Updater(object):
 
 
 
+  def _log_current_root_threshold_keyids(self):
+
+    logger.debug('"current" root version: {version}, threshold: {th}, keyids: {keyids}'.format(
+        version=self.metadata['current']['root']['version'],
+        th=self.metadata['current']['root']['roles']['root']['threshold'],
+        keyids=self.metadata['current']['root']['roles']['root']['keyids']))
+
+    th=tuf.roledb.get_role_threshold('root', self.repository_name)
+    keyids=tuf.roledb.get_role_keyids('root', self.repository_name)
+    logger.debug('"roledb" root threshold: {th}, keyids: {keyids}'.format(th=th, keyids=keyids))
 
 
   def _load_metadata_from_file(self, metadata_set, metadata_role):
@@ -904,6 +920,9 @@ class Updater(object):
 
     tuf.roledb.create_roledb_from_root_metadata(self.metadata['current']['root'],
         self.repository_name)
+
+    logger.debug('Rebuild roledb and keydb')
+    self._log_current_root_threshold_keyids()
 
 
 
@@ -1057,6 +1076,9 @@ class Updater(object):
     # Raise 'tuf.exceptions.NoWorkingMirrorError' if an update fails.
     root_metadata = self.metadata['current']['root']
 
+    logger.debug('Start refresh()')
+    self._log_current_root_threshold_keyids()
+
     try:
       self._ensure_not_expired(root_metadata, 'root')
 
@@ -1138,6 +1160,7 @@ class Updater(object):
     lower_bound = current_root_metadata['version'] + 1
     upper_bound = lower_bound + tuf.settings.MAX_NUMBER_ROOT_ROTATIONS
 
+    logger.debug("Update from the next version of root up to MAX_NUMBER_ROOT_ROTATIONS")
     # Try downloading the next root.
     for next_version in range(lower_bound, upper_bound):
       try:
@@ -1440,13 +1463,23 @@ class Updater(object):
     # We previously verified version numbers in this function, but have since
     # moved version number verification to the functions that retrieve
     # metadata.
-
+    if metadata_role == 'root':
+      logger.debug('Verify next root with roledb keys/thresold:')
+      logger.debug('Next root version {v}, signable {s} '.format(
+          v=metadata_signable['signed']['version'],
+          s=repr(metadata_signable['signed']['roles']['root'])))
+      logger.debug('Next root version {v}, signatures {s} '.format(
+            v=metadata_signable['signed']['version'],
+            s=repr(metadata_signable['signatures'])))
+      self._log_current_root_threshold_keyids()
     # Verify the signature on the downloaded metadata object.
     valid = tuf.sig.verify(metadata_signable, metadata_role,
         self.repository_name)
 
     if not valid:
       raise securesystemslib.exceptions.BadSignatureError(metadata_role)
+
+    logger.debug("Valid root signatures")
 
 
 
@@ -1606,14 +1639,24 @@ class Updater(object):
       return True
 
     current_root_role = current_root_metadata['roles'][rolename]
+    version = next_root_metadata['signed']['version']
+
+    logger.debug('Verify next root with self.metadata[\'curent\'] keyids/threshold')
+    logger.debug('Next root version {v}, signable {s}'.format(
+        v=version, s=repr(next_root_metadata['signed']['roles']['root'])))
+    self._log_current_root_threshold_keyids()
+    logger.debug('Next root version {v}, signatures {s} '.format(
+          v=version,
+          s=repr(next_root_metadata['signatures'])))
 
     # Verify next metadata with current keys/threshold
     valid = tuf.sig.verify(next_root_metadata, rolename, self.repository_name,
         current_root_role['threshold'], current_root_role['keyids'])
 
     if not valid:
-      raise securesystemslib.exceptions.BadSignatureError('Root is not signed'
+      raise securesystemslib.exceptions.BadSignatureError('Root ' + repr(version) + ' is not signed'
           ' by previous threshold of keys.')
+    logger.debug("Valid root signatures")
 
 
 
@@ -1802,7 +1845,7 @@ class Updater(object):
     metadata_file_object.seek(0)
     metadata_signable = \
       securesystemslib.util.load_json_string(metadata_file_object.read().decode('utf-8'))
-
+    logger.debug('Move the verified updated {} file to the \'current\' directory.'.format(remote_filename))
     securesystemslib.util.persist_temp_file(metadata_file_object, current_filepath)
 
     # Extract the metadata object so we can store it to the metadata store.
@@ -1819,6 +1862,7 @@ class Updater(object):
     # Rebuilding the key and role info is required if the newly-installed
     # root metadata has revoked keys or updated any top-level role information.
     logger.debug('Updated ' + repr(current_filepath) + '.')
+    logger.debug('Update self.metadata and self.versioninfo')
     self.metadata['previous'][metadata_role] = current_metadata_object
     self.metadata['current'][metadata_role] = updated_metadata_object
     self._update_versioninfo(metadata_filename)
