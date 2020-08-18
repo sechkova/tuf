@@ -215,6 +215,30 @@ class Signed:
             signatures=signable['signatures'])
 
 
+class Root(Signed):
+    def __init__(self, roles: JsonDict = None, keys: JsonDict = None,
+                **kwargs) -> None:
+            # TODO: How much init magic do we want?
+            # TODO: Is there merit in creating classes for dict fields?
+            super().__init__(**kwargs)
+            self.roles = roles
+            self.keys = keys
+
+    def as_dict(self) -> JsonDict:
+        json_dict = super().as_dict()
+        json_dict.update({
+            'roles': self.roles,
+            'keys': self.keys
+        })
+        return json_dict
+
+    # Update metadata about the snapshot metadata.
+    def update(self, roles: JsonDict, keys: JsonDict) -> None:
+        self.roles = roles
+        self.keys = keys
+
+
+
 class Timestamp(Signed):
     def __init__(self, meta: JsonDict = None, **kwargs) -> None:
         super().__init__(**kwargs)
