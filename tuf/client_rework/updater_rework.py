@@ -19,13 +19,7 @@ from securesystemslib import util as sslib_util
 from tuf import exceptions, settings
 from tuf.client.fetcher import FetcherInterface
 from tuf.client_rework import download, mirrors, requests_fetcher
-
-from .metadata_wrapper import (
-    RootWrapper,
-    SnapshotWrapper,
-    TargetsWrapper,
-    TimestampWrapper,
-)
+from tuf.client_rework.metadata_bundle import MetadataBundle
 
 # Globals
 logger = logging.getLogger(__name__)
@@ -64,6 +58,18 @@ class Updater:
         else:
             self._fetcher = fetcher
 
+        # TODO: who's responsible for ensuring the path exists?
+        metadata_path = os.path.join(
+            settings.repositories_directory,
+            self._repository_name,
+            "metadata",
+            "current",
+        )
+
+        # On initialization of MetadataBundle, the last trusted root is
+        # loaded from the file system.
+        self._trusted_bundle = MetadataBundle(metadata_path)
+
     def refresh(self) -> None:
         """
         This method downloads, verifies, and loads metadata for the top-level
@@ -81,7 +87,7 @@ class Updater:
         self._load_root()
         self._load_timestamp()
         self._load_snapshot()
-        self._load_targets("targets", "root")
+        self._load_targets()
 
     def get_one_valid_targetinfo(self, filename: str) -> Dict:
         """
@@ -172,43 +178,17 @@ class Updater:
         sslib_util.persist_temp_file(temp_obj, filepath)
         temp_obj.close()
 
-    def _get_full_meta_name(
-        self, role: str, extension: str = ".json", version: int = None
-    ) -> str:
-        """
-        Helper method returning full metadata file path given the role name
-        and file extension.
-        """
-        if version is None:
-            filename = role + extension
-        else:
-            filename = str(version) + "." + role + extension
-        return os.path.join(
-            settings.repositories_directory,
-            self._repository_name,
-            "metadata",
-            "current",
-            filename,
-        )
-
     def _load_root(self) -> None:
         """
         If metadata file for 'root' role does not exist locally, download it
         over a network, verify it and store it permanently.
         """
 
-        # Load trusted root metadata
-        # TODO: this should happen much earlier, on Updater.__init__
-        self._metadata["root"] = RootWrapper.from_json_file(
-            self._get_full_meta_name("root")
-        )
-
         # Update the root role
         # 1.1. Let N denote the version number of the trusted
         # root metadata file.
-        lower_bound = self._metadata["root"].version
+        lower_bound = self._trusted_bundle.root.signed.version + 1
         upper_bound = lower_bound + settings.MAX_NUMBER_ROOT_ROTATIONS
-        intermediate_root = None
 
         for next_version in range(lower_bound, upper_bound):
             try:
@@ -221,7 +201,7 @@ class Updater:
                 # For each version of root iterate over the list of mirrors
                 # until an intermediate root is successfully downloaded and
                 # verified.
-                intermediate_root = self._root_mirrors_download(root_mirrors)
+                self._root_mirrors_download(root_mirrors)
 
             # Exit the loop when all mirrors have raised only 403 / 404 errors,
             # which indicates that a bigger root version does not exist.
@@ -241,41 +221,7 @@ class Updater:
                 # does not exist.
                 break
 
-        # Continue only if a newer root version is found
-        if intermediate_root is not None:
-            # Check for a freeze attack. The latest known time MUST be lower
-            # than the expiration timestamp in the trusted root metadata file
-            # TODO define which exceptions are part of the public API
-            intermediate_root.expires()
-
-            # 1.9. If the timestamp and / or snapshot keys have been rotated,
-            # then delete the trusted timestamp and snapshot metadata files.
-            if self._metadata["root"].keys(
-                "timestamp"
-            ) != intermediate_root.keys("timestamp"):
-                # FIXME: use abstract storage
-                os.remove(self._get_full_meta_name("timestamp"))
-                self._metadata["timestamp"] = {}
-
-            if self._metadata["root"].keys(
-                "snapshot"
-            ) != intermediate_root.keys("snapshot"):
-                # FIXME: use abstract storage
-                os.remove(self._get_full_meta_name("snapshot"))
-                self._metadata["snapshot"] = {}
-
-            # Set the trusted root metadata file to the new root
-            # metadata file
-            self._metadata["root"] = intermediate_root
-            # Persist root metadata. The client MUST write the file to
-            # non-volatile storage as FILENAME.EXT (e.g. root.json).
-            self._metadata["root"].persist(self._get_full_meta_name("root"))
-
-            # 1.10. Set whether consistent snapshots are used as per
-            # the trusted root metadata file
-            self._consistent_snapshot = self._metadata[
-                "root"
-            ].signed.consistent_snapshot
+        self._trusted_bundle.root_update_finished()
 
     def _root_mirrors_download(self, root_mirrors: Dict) -> "RootWrapper":
         """Iterate over the list of "root_mirrors" until an intermediate
@@ -285,7 +231,6 @@ class Updater:
 
         file_mirror_errors = {}
         temp_obj = None
-        intermediate_root = None
 
         for root_mirror in root_mirrors:
             try:
@@ -297,10 +242,10 @@ class Updater:
                 )
 
                 temp_obj.seek(0)
-                intermediate_root = self._verify_root(temp_obj.read())
+                self._trusted_bundle.update_metadata(temp_obj.read(), "root")
                 # When we reach this point, a root file has been successfully
-                # downloaded and verified so we can exit the loop.
-                break
+                # downloaded and verified so we can return.
+                return
 
             # pylint cannot figure out that we store the exceptions
             # in a dictionary to raise them later so we disable
@@ -315,12 +260,9 @@ class Updater:
                 if temp_obj:
                     temp_obj.close()
 
-        if not intermediate_root:
-            # If all mirrors are tried but a valid root file is not found,
-            # then raise an exception with the stored errors
-            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
-
-        return intermediate_root
+        # If all mirrors are tried but a valid root file is not found,
+        # then raise an exception with the stored errors
+        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
     def _load_timestamp(self) -> None:
         """
@@ -333,7 +275,6 @@ class Updater:
         )
 
         file_mirror_errors = {}
-        verified_timestamp = None
         for file_mirror in file_mirrors:
             try:
                 temp_obj = download.download_file(
@@ -344,8 +285,10 @@ class Updater:
                 )
 
                 temp_obj.seek(0)
-                verified_timestamp = self._verify_timestamp(temp_obj.read())
-                break
+                self._trusted_bundle.update_metadata(
+                    temp_obj.read(), "timestamp"
+                )
+                return
 
             except Exception as exception:  # pylint:  disable=broad-except
                 file_mirror_errors[file_mirror] = exception
@@ -354,30 +297,18 @@ class Updater:
                 if temp_obj:
                     temp_obj.close()
 
-        if not verified_timestamp:
-            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
-
-        self._metadata["timestamp"] = verified_timestamp
-        # Persist root metadata. The client MUST write the file to
-        # non-volatile storage as FILENAME.EXT (e.g. root.json).
-        self._metadata["timestamp"].persist(
-            self._get_full_meta_name("timestamp.json")
-        )
+        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
     def _load_snapshot(self) -> None:
         """
         TODO
         """
         try:
-            length = self._metadata["timestamp"].snapshot["length"]
+            length = self._trusted_bundle.timestamp.signed.meta[
+                "snapshot.json"
+            ]["length"]
         except KeyError:
             length = settings.DEFAULT_SNAPSHOT_REQUIRED_LENGTH
-
-        # Uncomment when implementing consistent_snapshot
-        # if self._consistent_snapshot:
-        #     version = self._metadata["timestamp"].snapshot["version"]
-        # else:
-        #     version = None
 
         # TODO: Check if exists locally
 
@@ -386,7 +317,6 @@ class Updater:
         )
 
         file_mirror_errors = {}
-        verified_snapshot = False
         for file_mirror in file_mirrors:
             try:
                 temp_obj = download.download_file(
@@ -397,8 +327,10 @@ class Updater:
                 )
 
                 temp_obj.seek(0)
-                verified_snapshot = self._verify_snapshot(temp_obj.read())
-                break
+                self._trusted_bundle.update_metadata(
+                    temp_obj.read(), "snapshot"
+                )
+                return
 
             except Exception as exception:  # pylint:  disable=broad-except
                 file_mirror_errors[file_mirror] = exception
@@ -407,39 +339,33 @@ class Updater:
                 if temp_obj:
                     temp_obj.close()
 
-        if not verified_snapshot:
-            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
+        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
-        self._metadata["snapshot"] = verified_snapshot
-        # Persist root metadata. The client MUST write the file to
-        # non-volatile storage as FILENAME.EXT (e.g. root.json).
-        self._metadata["snapshot"].persist(
-            self._get_full_meta_name("snapshot.json")
-        )
-
-    def _load_targets(self, targets_role: str, parent_role: str) -> None:
+    def _load_targets(self) -> None:
         """
         TODO
         """
+        self._load_delegation("targets", "root")
+
+    def _load_delegation(self, targets_role: str, parent_role: str) -> None:
+        """
+        TODO
+        """
+        targets_filename = f"{targets_role}.json"
         try:
-            length = self._metadata["snapshot"].role(targets_role)["length"]
+            length = self._trusted_bundle.snapshot.signed.meta[
+                targets_filename
+            ]["length"]
         except KeyError:
             length = settings.DEFAULT_TARGETS_REQUIRED_LENGTH
-
-        # Uncomment when implementing consistent_snapshot
-        # if self._consistent_snapshot:
-        #     version = self._metadata["snapshot"].role(targets_role)["version"]
-        # else:
-        #     version = None
 
         # TODO: Check if exists locally
 
         file_mirrors = mirrors.get_list_of_mirrors(
-            "meta", f"{targets_role}.json", self._mirrors
+            "meta", targets_filename, self._mirrors
         )
 
         file_mirror_errors = {}
-        verified_targets = False
         for file_mirror in file_mirrors:
             try:
                 temp_obj = download.download_file(
@@ -450,10 +376,10 @@ class Updater:
                 )
 
                 temp_obj.seek(0)
-                verified_targets = self._verify_targets(
+                self._trusted_bundle.update_metadata(
                     temp_obj.read(), targets_role, parent_role
                 )
-                break
+                return
 
             except Exception as exception:  # pylint:  disable=broad-except
                 file_mirror_errors[file_mirror] = exception
@@ -462,149 +388,7 @@ class Updater:
                 if temp_obj:
                     temp_obj.close()
 
-        if not verified_targets:
-            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
-
-        self._metadata[targets_role] = verified_targets
-        # Persist root metadata. The client MUST write the file to
-        # non-volatile storage as FILENAME.EXT (e.g. root.json).
-        self._metadata[targets_role].persist(
-            self._get_full_meta_name(targets_role, extension=".json")
-        )
-
-    def _verify_root(self, file_content: bytes) -> RootWrapper:
-        """
-        TODO
-        """
-
-        intermediate_root = RootWrapper.from_json_object(file_content)
-
-        # Check for an arbitrary software attack
-        trusted_root = self._metadata["root"]
-        intermediate_root.verify(
-            trusted_root.keys("root"), trusted_root.threshold("root")
-        )
-        intermediate_root.verify(
-            intermediate_root.keys("root"), intermediate_root.threshold("root")
-        )
-
-        # Check for a rollback attack.
-        if intermediate_root.version < trusted_root.version:
-            raise exceptions.ReplayedMetadataError(
-                "root", intermediate_root.version(), trusted_root.version()
-            )
-        # Note that the expiration of the new (intermediate) root metadata
-        # file does not matter yet, because we will check for it in step 1.8.
-
-        return intermediate_root
-
-    def _verify_timestamp(self, file_content: bytes) -> TimestampWrapper:
-        """
-        TODO
-        """
-        intermediate_timestamp = TimestampWrapper.from_json_object(file_content)
-
-        # Check for an arbitrary software attack
-        trusted_root = self._metadata["root"]
-        intermediate_timestamp.verify(
-            trusted_root.keys("timestamp"), trusted_root.threshold("timestamp")
-        )
-
-        # Check for a rollback attack.
-        if self._metadata.get("timestamp"):
-            if (
-                intermediate_timestamp.signed.version
-                <= self._metadata["timestamp"].version
-            ):
-                raise exceptions.ReplayedMetadataError(
-                    "root",
-                    intermediate_timestamp.version(),
-                    self._metadata["timestamp"].version(),
-                )
-
-        if self._metadata.get("snapshot"):
-            if (
-                intermediate_timestamp.snapshot.version
-                <= self._metadata["timestamp"].snapshot["version"]
-            ):
-                raise exceptions.ReplayedMetadataError(
-                    "root",
-                    intermediate_timestamp.snapshot.version(),
-                    self._metadata["snapshot"].version(),
-                )
-
-        intermediate_timestamp.expires()
-
-        return intermediate_timestamp
-
-    def _verify_snapshot(self, file_content: bytes) -> SnapshotWrapper:
-        """
-        TODO
-        """
-
-        # Check against timestamp metadata
-        if self._metadata["timestamp"].snapshot.get("hash"):
-            _check_hashes(
-                file_content, self._metadata["timestamp"].snapshot.get("hash")
-            )
-
-        intermediate_snapshot = SnapshotWrapper.from_json_object(file_content)
-
-        if (
-            intermediate_snapshot.version
-            != self._metadata["timestamp"].snapshot["version"]
-        ):
-            raise exceptions.BadVersionNumberError
-
-        # Check for an arbitrary software attack
-        trusted_root = self._metadata["root"]
-        intermediate_snapshot.verify(
-            trusted_root.keys("snapshot"), trusted_root.threshold("snapshot")
-        )
-
-        # Check for a rollback attack
-        if self._metadata.get("snapshot"):
-            for target_role in intermediate_snapshot.signed.meta:
-                if (
-                    target_role["version"]
-                    != self._metadata["snapshot"].meta[target_role]["version"]
-                ):
-                    raise exceptions.BadVersionNumberError
-
-        intermediate_snapshot.expires()
-
-        return intermediate_snapshot
-
-    def _verify_targets(
-        self, file_content: bytes, filename: str, parent_role: str
-    ) -> TargetsWrapper:
-        """
-        TODO
-        """
-
-        # Check against timestamp metadata
-        if self._metadata["snapshot"].role(filename).get("hash"):
-            _check_hashes(
-                file_content, self._metadata["snapshot"].targets.get("hash")
-            )
-
-        intermediate_targets = TargetsWrapper.from_json_object(file_content)
-        if (
-            intermediate_targets.version
-            != self._metadata["snapshot"].role(filename)["version"]
-        ):
-            raise exceptions.BadVersionNumberError
-
-        # Check for an arbitrary software attack
-        parent_role = self._metadata[parent_role]
-
-        intermediate_targets.verify(
-            parent_role.keys(filename), parent_role.threshold(filename)
-        )
-
-        intermediate_targets.expires()
-
-        return intermediate_targets
+        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
     def _preorder_depth_first_walk(self, target_filepath) -> Dict:
         """
@@ -631,7 +415,7 @@ class Updater:
 
             # Pop the role name from the top of the stack.
             role_name, parent_role = role_names.pop(-1)
-            self._load_targets(role_name, parent_role)
+            self._load_delegation(role_name, parent_role)
             # Skip any visited current role to prevent cycles.
             if (role_name, parent_role) in visited_role_names:
                 msg = f"Skipping visited current role {role_name}"
@@ -647,15 +431,15 @@ class Updater:
             # self._refresh_targets_metadata(role_name,
             #     refresh_all_delegated_roles=False)
 
-            role_metadata = self._metadata[role_name]
-            target = role_metadata.targets.get(target_filepath)
+            role_metadata = self._trusted_bundle[role_name]
+            target = role_metadata.signed.targets.get(target_filepath)
 
             # After preorder check, add current role to set of visited roles.
             visited_role_names.add((role_name, parent_role))
 
             # And also decrement number of visited roles.
             number_of_delegations -= 1
-            delegations = role_metadata.delegations
+            delegations = role_metadata.signed.delegations
             child_roles = delegations.get("roles", [])
 
             if target is None:
@@ -841,27 +625,6 @@ def _check_hashes_obj(file_object, trusted_hashes):
     for algorithm, trusted_hash in trusted_hashes.items():
         digest_object = sslib_hash.digest_fileobject(file_object, algorithm)
 
-        computed_hash = digest_object.hexdigest()
-
-        # Raise an exception if any of the hashes are incorrect.
-        if trusted_hash != computed_hash:
-            raise sslib_exceptions.BadHashError(trusted_hash, computed_hash)
-
-        logger.info(
-            "The file's " + algorithm + " hash is" " correct: " + trusted_hash
-        )
-
-
-def _check_hashes(file_content, trusted_hashes):
-    """
-    TODO
-    """
-    # Verify each trusted hash of 'trusted_hashes'.  If all are valid, simply
-    # return.
-    for algorithm, trusted_hash in trusted_hashes.items():
-        digest_object = sslib_hash.digest(algorithm)
-
-        digest_object.update(file_content)
         computed_hash = digest_object.hexdigest()
 
         # Raise an exception if any of the hashes are incorrect.
