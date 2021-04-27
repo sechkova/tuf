@@ -268,78 +268,79 @@ class Updater:
         """
         TODO
         """
-        # TODO Check if timestamp exists locally
 
-        file_mirrors = mirrors.get_list_of_mirrors(
-            "meta", "timestamp.json", self._mirrors
-        )
+        if not self._trusted_bundle.load_local_metadata("timestamp"):
 
-        file_mirror_errors = {}
-        for file_mirror in file_mirrors:
-            try:
-                temp_obj = download.download_file(
-                    file_mirror,
-                    settings.DEFAULT_TIMESTAMP_REQUIRED_LENGTH,
-                    self._fetcher,
-                    strict_required_length=False,
-                )
+            file_mirrors = mirrors.get_list_of_mirrors(
+                "meta", "timestamp.json", self._mirrors
+            )
 
-                temp_obj.seek(0)
-                self._trusted_bundle.update_metadata(
-                    temp_obj.read(), "timestamp"
-                )
-                return
+            file_mirror_errors = {}
+            for file_mirror in file_mirrors:
+                try:
+                    temp_obj = download.download_file(
+                        file_mirror,
+                        settings.DEFAULT_TIMESTAMP_REQUIRED_LENGTH,
+                        self._fetcher,
+                        strict_required_length=False,
+                    )
 
-            except Exception as exception:  # pylint:  disable=broad-except
-                file_mirror_errors[file_mirror] = exception
+                    temp_obj.seek(0)
+                    self._trusted_bundle.update_metadata(
+                        temp_obj.read(), "timestamp"
+                    )
+                    return
 
-            finally:
-                if temp_obj:
-                    temp_obj.close()
+                except Exception as exception:  # pylint:  disable=broad-except
+                    file_mirror_errors[file_mirror] = exception
 
-        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
+                finally:
+                    if temp_obj:
+                        temp_obj.close()
+
+            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
     def _load_snapshot(self) -> None:
         """
         TODO
         """
-        try:
-            length = self._trusted_bundle.timestamp.signed.meta[
-                "snapshot.json"
-            ]["length"]
-        except KeyError:
-            length = settings.DEFAULT_SNAPSHOT_REQUIRED_LENGTH
 
-        # TODO: Check if exists locally
-
-        file_mirrors = mirrors.get_list_of_mirrors(
-            "meta", "snapshot.json", self._mirrors
-        )
-
-        file_mirror_errors = {}
-        for file_mirror in file_mirrors:
+        if not self._trusted_bundle.load_local_metadata("snapshot"):
             try:
-                temp_obj = download.download_file(
-                    file_mirror,
-                    length,
-                    self._fetcher,
-                    strict_required_length=False,
-                )
+                length = self._trusted_bundle.timestamp.signed.meta[
+                    "snapshot.json"
+                ]["length"]
+            except KeyError:
+                length = settings.DEFAULT_SNAPSHOT_REQUIRED_LENGTH
 
-                temp_obj.seek(0)
-                self._trusted_bundle.update_metadata(
-                    temp_obj.read(), "snapshot"
-                )
-                return
+            file_mirrors = mirrors.get_list_of_mirrors(
+                "meta", "snapshot.json", self._mirrors
+            )
 
-            except Exception as exception:  # pylint:  disable=broad-except
-                file_mirror_errors[file_mirror] = exception
+            file_mirror_errors = {}
+            for file_mirror in file_mirrors:
+                try:
+                    temp_obj = download.download_file(
+                        file_mirror,
+                        length,
+                        self._fetcher,
+                        strict_required_length=False,
+                    )
 
-            finally:
-                if temp_obj:
-                    temp_obj.close()
+                    temp_obj.seek(0)
+                    self._trusted_bundle.update_metadata(
+                        temp_obj.read(), "snapshot"
+                    )
+                    return
 
-        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
+                except Exception as exception:  # pylint:  disable=broad-except
+                    file_mirror_errors[file_mirror] = exception
+
+                finally:
+                    if temp_obj:
+                        temp_obj.close()
+
+            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
     def _load_targets(self) -> None:
         """
@@ -351,44 +352,45 @@ class Updater:
         """
         TODO
         """
-        targets_filename = f"{targets_role}.json"
-        try:
-            length = self._trusted_bundle.snapshot.signed.meta[
-                targets_filename
-            ]["length"]
-        except KeyError:
-            length = settings.DEFAULT_TARGETS_REQUIRED_LENGTH
-
-        # TODO: Check if exists locally
-
-        file_mirrors = mirrors.get_list_of_mirrors(
-            "meta", targets_filename, self._mirrors
-        )
-
-        file_mirror_errors = {}
-        for file_mirror in file_mirrors:
+        if not self._trusted_bundle.load_local_metadata(targets_role):
+            targets_filename = f"{targets_role}.json"
             try:
-                temp_obj = download.download_file(
-                    file_mirror,
-                    length,
-                    self._fetcher,
-                    strict_required_length=False,
-                )
+                length = self._trusted_bundle.snapshot.signed.meta[
+                    targets_filename
+                ]["length"]
+            except KeyError:
+                length = settings.DEFAULT_TARGETS_REQUIRED_LENGTH
 
-                temp_obj.seek(0)
-                self._trusted_bundle.update_metadata(
-                    temp_obj.read(), targets_role, parent_role
-                )
-                return
+            # TODO: Check if exists locally
 
-            except Exception as exception:  # pylint:  disable=broad-except
-                file_mirror_errors[file_mirror] = exception
+            file_mirrors = mirrors.get_list_of_mirrors(
+                "meta", targets_filename, self._mirrors
+            )
 
-            finally:
-                if temp_obj:
-                    temp_obj.close()
+            file_mirror_errors = {}
+            for file_mirror in file_mirrors:
+                try:
+                    temp_obj = download.download_file(
+                        file_mirror,
+                        length,
+                        self._fetcher,
+                        strict_required_length=False,
+                    )
 
-        raise exceptions.NoWorkingMirrorError(file_mirror_errors)
+                    temp_obj.seek(0)
+                    self._trusted_bundle.update_metadata(
+                        temp_obj.read(), targets_role, parent_role
+                    )
+                    return
+
+                except Exception as exception:  # pylint:  disable=broad-except
+                    file_mirror_errors[file_mirror] = exception
+
+                finally:
+                    if temp_obj:
+                        temp_obj.close()
+
+            raise exceptions.NoWorkingMirrorError(file_mirror_errors)
 
     def _preorder_depth_first_walk(self, target_filepath) -> Dict:
         """
