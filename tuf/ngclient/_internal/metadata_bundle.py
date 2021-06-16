@@ -257,7 +257,6 @@ class MetadataBundle(abc.Mapping):
                 error type and content will contain more details.
         """
         if not self._root_update_finished:
-            # root_update_finished() not called
             raise RuntimeError("Cannot update timestamp before root")
         if self.snapshot is not None:
             raise RuntimeError("Cannot update timestamp after snapshot")
@@ -277,6 +276,8 @@ class MetadataBundle(abc.Mapping):
                 "New timestamp is not signed by root", new_timestamp.signed
             )
 
+        # If an existing trusted timestamp is updated,
+        # check for a rollback attack
         if self.timestamp is not None:
             # Prevent rolling back timestamp version
             if new_timestamp.signed.version < self.timestamp.signed.version:
@@ -290,7 +291,6 @@ class MetadataBundle(abc.Mapping):
                 new_timestamp.signed.meta["snapshot.json"].version
                 < self.timestamp.signed.meta["snapshot.json"].version
             ):
-                # TODO not sure about the correct exception here
                 raise exceptions.ReplayedMetadataError(
                     "snapshot",
                     new_timestamp.signed.meta["snapshot.json"].version,
@@ -330,7 +330,6 @@ class MetadataBundle(abc.Mapping):
             digest_object.update(data)
             observed_hash = digest_object.hexdigest()
             if observed_hash != stored_hash:
-                # TODO: Error should derive from RepositoryError
                 raise exceptions.BadHashError(stored_hash, observed_hash)
 
         try:
@@ -358,6 +357,8 @@ class MetadataBundle(abc.Mapping):
                 f"got {new_snapshot.signed.version}"
             )
 
+        # If an existing trusted snapshot is updated,
+        # check for a rollback attack
         if self.snapshot:
             for filename, fileinfo in self.snapshot.signed.meta.items():
                 new_fileinfo = new_snapshot.signed.meta.get(filename)
