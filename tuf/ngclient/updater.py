@@ -354,38 +354,27 @@ class Updater:
                 child_roles = role_metadata.delegations.roles
 
             if target is None:
-
                 child_roles_to_visit = []
                 # NOTE: This may be a slow operation if there are many
                 # delegated roles.
                 for child_role in child_roles:
                     if child_role.is_in_trusted_paths(target_filepath):
-                        child_role_name = child_role.name
-                    else:
-                        child_role_name = None
 
-                    if child_role.terminating and child_role_name is not None:
-                        msg = (
-                            f"Adding child role {child_role_name}.\n",
-                            "Not backtracking to other roles.",
-                        )
+                        msg = f"Adding child role {child_role.name}"
                         logger.debug(msg)
-                        role_names = []
+
                         child_roles_to_visit.append(
-                            (child_role_name, role_name)
+                            (child_role.name, role_name)
                         )
-                        break
 
-                    if child_role_name is None:
-                        msg = f"Skipping child role {child_role_name}"
-                        logger.debug(msg)
+                        if child_role.terminating:
+                            logger.debug("Not backtracking to other roles.")
+                            role_names = []
+                            break
 
                     else:
-                        msg = f"Adding child role {child_role_name}"
+                        msg = f"Skipping child role {child_role.name}"
                         logger.debug(msg)
-                        child_roles_to_visit.append(
-                            (child_role_name, role_name)
-                        )
 
                 # Push 'child_roles_to_visit' in reverse order of appearance
                 # onto 'role_names'.  Roles are popped from the end of
