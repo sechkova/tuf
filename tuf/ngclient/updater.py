@@ -6,12 +6,13 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from urllib import parse
 
 from securesystemslib import util as sslib_util
 
 from tuf import exceptions
+from tuf.api.metadata import Targets
 from tuf.ngclient._internal import (
     download,
     requests_fetcher,
@@ -93,7 +94,9 @@ class Updater:
         self._load_snapshot()
         self._load_targets("targets", "root")
 
-    def get_one_valid_targetinfo(self, target_path: str) -> Dict:
+    def get_one_valid_targetinfo(
+        self, target_path: str
+    ) -> Union[Dict[str, Any], None]:
         """
         Returns the target information for a target identified by target_path.
 
@@ -312,7 +315,9 @@ class Updater:
             self._trusted_set.update_delegated_targets(data, role, parent_role)
             self._persist_metadata(role, data)
 
-    def _preorder_depth_first_walk(self, target_filepath: str) -> Dict:
+    def _preorder_depth_first_walk(
+        self, target_filepath: str
+    ) -> Union[Dict[str, Any], None]:
         """
         Interrogates the tree of target delegations in order of appearance
         (which implicitly order trustworthiness), and returns the matching
@@ -338,7 +343,7 @@ class Updater:
             # its targets, delegations, and child roles can be inspected.
             self._load_targets(role_name, parent_role)
 
-            role_metadata = self._trusted_set[role_name].signed
+            role_metadata: Targets = self._trusted_set[role_name].signed
             target = role_metadata.targets.get(target_filepath)
 
             if target is not None:
