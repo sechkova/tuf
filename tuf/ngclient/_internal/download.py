@@ -217,7 +217,7 @@ def _check_downloaded_length(
             # If the average download speed is below a certain threshold, we
             # flag this as a possible slow-retrieval attack.
             if average_download_speed < tuf.settings.MIN_AVERAGE_DOWNLOAD_SPEED:
-                raise exceptions.SlowRetrievalError(average_download_speed)
+                raise exceptions.SlowRetrievalError
 
             raise exceptions.DownloadLengthMismatchError(
                 required_length, total_downloaded
@@ -229,7 +229,7 @@ def _check_downloaded_length(
         # signed metadata; so, we must guess a reasonable required_length
         # for it.
         if average_download_speed < tuf.settings.MIN_AVERAGE_DOWNLOAD_SPEED:
-            raise exceptions.SlowRetrievalError(average_download_speed)
+            raise exceptions.SlowRetrievalError
 
         logger.debug(
             "Good average download speed: %f bytes per second",

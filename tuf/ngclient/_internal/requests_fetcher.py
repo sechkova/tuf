@@ -136,7 +136,7 @@ class RequestsFetcher(FetcherInterface):
                         break
 
             except urllib3.exceptions.ReadTimeoutError as e:
-                raise exceptions.SlowRetrievalError(str(e))
+                raise exceptions.SlowRetrievalError from e
 
             finally:
                 response.close()

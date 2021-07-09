@@ -206,23 +206,6 @@ class DownloadLengthMismatchError(DownloadError):
 class SlowRetrievalError(DownloadError):
   """"Indicate that downloading a file took an unreasonably long time."""
 
-  def __init__(self, average_download_speed: int):
-    super(SlowRetrievalError, self).__init__()
-
-    self.__average_download_speed = average_download_speed #bytes/second
-
-  def __str__(self) -> str:
-    return (
-        'Download was too slow. Average speed: ' +
-         repr(self.__average_download_speed) + ' bytes per second.')
-
-  def __repr__(self) -> str:
-    return self.__class__.__name__ + ' : ' + str(self)
-
-    # # Directly instance-reproducing:
-    # return (
-    #     self.__class__.__name__ + '(' + repr(self.__average_download_speed + ')')
-
 
 class KeyAlreadyExistsError(Error):
   """Indicate that a key already exists and cannot be added."""
