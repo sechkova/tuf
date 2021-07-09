@@ -7,7 +7,7 @@
 
 import logging
 import time
-from typing import Optional
+from typing import Dict, Iterator, Optional
 from urllib import parse
 
 # Imports
@@ -31,7 +31,7 @@ class RequestsFetcher(FetcherInterface):
             session per scheme+hostname combination.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # http://docs.python-requests.org/en/master/user/advanced/#session-objects:
         #
         # "The Session object allows you to persist certain parameters across
@@ -46,14 +46,14 @@ class RequestsFetcher(FetcherInterface):
         # improve efficiency, but avoiding sharing state between different
         # hosts-scheme combinations to minimize subtle security issues.
         # Some cookies may not be HTTP-safe.
-        self._sessions = {}
+        self._sessions: Dict[str, requests.Session] = {}
 
         # Default settings
         self.socket_timeout: int = 4  # seconds
         self.chunk_size: int = 400000  # bytes
         self.sleep_before_round: Optional[int] = None
 
-    def fetch(self, url, required_length):
+    def fetch(self, url: str, required_length: int) -> Iterator[bytes]:
         """Fetches the contents of HTTP/HTTPS url from a remote server.
 
         Ensures the length of the downloaded data is up to 'required_length'.
@@ -93,7 +93,7 @@ class RequestsFetcher(FetcherInterface):
         # Define a generator function to be returned by fetch. This way the
         # caller of fetch can differentiate between connection and actual data
         # download and measure download times accordingly.
-        def chunks():
+        def chunks() -> Iterator[bytes]:
             try:
                 bytes_received = 0
                 while True:
@@ -143,7 +143,7 @@ class RequestsFetcher(FetcherInterface):
 
         return chunks()
 
-    def _get_session(self, url):
+    def _get_session(self, url: str) -> requests.Session:
         """Returns a different customized requests.Session per schema+hostname
         combination.
         """

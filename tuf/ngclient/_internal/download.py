@@ -26,18 +26,24 @@
 import logging
 import tempfile
 import timeit
+from typing import IO
 from urllib import parse
 
 from securesystemslib import formats as sslib_formats
 
-import tuf
-from tuf import exceptions, formats
+from tuf import exceptions, formats, settings
+from tuf.ngclient import FetcherInterface
 
 # See 'log.py' to learn how logging is handled in TUF.
 logger = logging.getLogger(__name__)
 
 
-def download_file(url, required_length, fetcher, strict_required_length=True):
+def download_file(
+    url: str,
+    required_length: int,
+    fetcher: FetcherInterface,
+    strict_required_length: bool = True,
+) -> IO[bytes]:
     """
     <Purpose>
       Given the url and length of the desired file, this function opens a
@@ -92,7 +98,7 @@ def download_file(url, required_length, fetcher, strict_required_length=True):
     # the downloaded file.
     temp_file = tempfile.TemporaryFile()  # pylint: disable=consider-using-with
 
-    average_download_speed = 0
+    average_download_speed = 0.0
     number_of_bytes_received = 0
 
     try:
@@ -110,7 +116,7 @@ def download_file(url, required_length, fetcher, strict_required_length=True):
                 number_of_bytes_received / seconds_spent_receiving
             )
 
-            if average_download_speed < tuf.settings.MIN_AVERAGE_DOWNLOAD_SPEED:
+            if average_download_speed < settings.MIN_AVERAGE_DOWNLOAD_SPEED:
                 logger.debug(
                     "The average download speed dropped below the minimum"
                     " average download speed set in tuf.settings.py."
@@ -142,7 +148,12 @@ def download_file(url, required_length, fetcher, strict_required_length=True):
         return temp_file
 
 
-def download_bytes(url, required_length, fetcher, strict_required_length=True):
+def download_bytes(
+    url: str,
+    required_length: int,
+    fetcher: FetcherInterface,
+    strict_required_length: bool = True,
+) -> bytes:
     """Download bytes from given url
 
     Returns the downloaded bytes, otherwise like download_file()
@@ -154,11 +165,11 @@ def download_bytes(url, required_length, fetcher, strict_required_length=True):
 
 
 def _check_downloaded_length(
-    total_downloaded,
-    required_length,
-    strict_required_length=True,
-    average_download_speed=None,
-):
+    total_downloaded: int,
+    required_length: int,
+    strict_required_length: bool,
+    average_download_speed: float,
+) -> None:
     """
     <Purpose>
       A helper function which checks whether the total number of downloaded
@@ -216,7 +227,7 @@ def _check_downloaded_length(
 
             # If the average download speed is below a certain threshold, we
             # flag this as a possible slow-retrieval attack.
-            if average_download_speed < tuf.settings.MIN_AVERAGE_DOWNLOAD_SPEED:
+            if average_download_speed < settings.MIN_AVERAGE_DOWNLOAD_SPEED:
                 raise exceptions.SlowRetrievalError
 
             raise exceptions.DownloadLengthMismatchError(
@@ -228,7 +239,7 @@ def _check_downloaded_length(
         # download the Timestamp or Root metadata, for which we have no
         # signed metadata; so, we must guess a reasonable required_length
         # for it.
-        if average_download_speed < tuf.settings.MIN_AVERAGE_DOWNLOAD_SPEED:
+        if average_download_speed < settings.MIN_AVERAGE_DOWNLOAD_SPEED:
             raise exceptions.SlowRetrievalError
 
         logger.debug(
