@@ -14,6 +14,7 @@ from securesystemslib import hash as sslib_hash
 from securesystemslib import util as sslib_util
 
 from tuf import exceptions
+from tuf.api.metadata import DelegatedRole, TargetFile, Targets
 from tuf.ngclient._internal import (
     download,
     requests_fetcher,
@@ -63,12 +64,7 @@ class Updater:
         # Read trusted local root metadata
         data = self._load_local_metadata("root")
         self._trusted_set = trusted_metadata_set.TrustedMetadataSet(data)
-
-        if fetcher is None:
-            self._fetcher = requests_fetcher.RequestsFetcher()
-        else:
-            self._fetcher = fetcher
-
+        self._fetcher = fetcher or requests_fetcher.RequestsFetcher()
         self.config = config or UpdaterConfig()
 
     def refresh(self) -> None:
@@ -95,7 +91,7 @@ class Updater:
         self._load_snapshot()
         self._load_targets("targets", "root")
 
-    def get_one_valid_targetinfo(self, target_path: str) -> Dict:
+    def get_one_valid_targetinfo(self, target_path: str) -> Dict[str, Any]:
         """
         Returns the target information for a target identified by target_path.
 
@@ -139,7 +135,7 @@ class Updater:
             # 'destination_directory' if 'filepath' contains a leading path
             # separator (i.e., is treated as an absolute path).
             filepath = target["filepath"]
-            target_fileinfo: "TargetFile" = target["fileinfo"]
+            target_fileinfo: TargetFile = target["fileinfo"]
 
             target_filepath = os.path.join(destination_directory, filepath)
 
@@ -159,10 +155,10 @@ class Updater:
 
     def download_target(
         self,
-        targetinfo: Dict,
+        targetinfo: Dict[str, Any],
         destination_directory: str,
         target_base_url: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Download target specified by 'targetinfo' into 'destination_directory'.
 
@@ -189,8 +185,8 @@ class Updater:
         else:
             target_base_url = _ensure_trailing_slash(target_base_url)
 
-        target_filepath = targetinfo["filepath"]
-        target_fileinfo: "TargetFile" = targetinfo["fileinfo"]
+        target_filepath: str = targetinfo["filepath"]
+        target_fileinfo: TargetFile = targetinfo["fileinfo"]
         full_url = parse.urljoin(target_base_url, target_filepath)
 
         with download.download_file(
@@ -226,7 +222,7 @@ class Updater:
         with open(os.path.join(self._dir, f"{rolename}.json"), "rb") as f:
             return f.read()
 
-    def _persist_metadata(self, rolename: str, data: bytes):
+    def _persist_metadata(self, rolename: str, data: bytes) -> None:
         with open(os.path.join(self._dir, f"{rolename}.json"), "wb") as f:
             f.write(data)
 
@@ -314,7 +310,9 @@ class Updater:
             self._trusted_set.update_delegated_targets(data, role, parent_role)
             self._persist_metadata(role, data)
 
-    def _preorder_depth_first_walk(self, target_filepath) -> Dict:
+    def _preorder_depth_first_walk(
+        self, target_filepath: str
+    ) -> Dict[str, Any]:
         """
         Interrogates the tree of target delegations in order of appearance
         (which implicitly order trustworthiness), and returns the matching
@@ -343,7 +341,7 @@ class Updater:
             # The metadata for 'role_name' must be downloaded/updated before
             # its targets, delegations, and child roles can be inspected.
 
-            role_metadata = self._trusted_set[role_name].signed
+            role_metadata: Targets = self._trusted_set[role_name].signed
             target = role_metadata.targets.get(target_filepath)
 
             # After preorder check, add current role to set of visited roles.
@@ -366,11 +364,11 @@ class Updater:
                     )
 
                     if child_role.terminating and child_role_name is not None:
-                        msg = (
-                            f"Adding child role {child_role_name}.\n",
-                            "Not backtracking to other roles.",
+                        logger.debug(
+                            "Adding child role %s. Not backtracking to other \
+                             roles.",
+                            child_role_name,
                         )
-                        logger.debug(msg)
                         role_names = []
                         child_roles_to_visit.append(
                             (child_role_name, role_name)
@@ -378,7 +376,7 @@ class Updater:
                         break
 
                     if child_role_name is None:
-                        msg = f"Skipping child role {child_role_name}"
+                        msg = f"Skipping child role {child_role.name}"
                         logger.debug(msg)
 
                     else:
@@ -403,16 +401,19 @@ class Updater:
             and number_of_delegations == 0
             and len(role_names) > 0
         ):
-            msg = (
-                f"{len(role_names)} roles left to visit, but allowed to ",
-                f"visit at most {self.config.max_delegations} delegations.",
+            logger.debug(
+                "%s roles left to visit, but allowed to visit at most \
+                 %d delegations.",
+                role_names,
+                self.config.max_delegations,
             )
-            logger.debug(msg)
 
         return {"filepath": target_filepath, "fileinfo": target}
 
 
-def _visit_child_role(child_role: Dict, target_filepath: str) -> str:
+def _visit_child_role(
+    child_role: DelegatedRole, target_filepath: str
+) -> Optional[str]:
     """
     <Purpose>
       Non-public method that determines whether the given 'target_filepath'
@@ -509,7 +510,9 @@ def _visit_child_role(child_role: Dict, target_filepath: str) -> str:
     return None
 
 
-def _get_filepath_hash(target_filepath, hash_function="sha256"):
+def _get_filepath_hash(
+    target_filepath: str, hash_function: str = "sha256"
+) -> str:
     """
     Calculate the hash of the filepath to determine which bin to find the
     target.
@@ -524,6 +527,6 @@ def _get_filepath_hash(target_filepath, hash_function="sha256"):
     return target_filepath_hash
 
 
-def _ensure_trailing_slash(url: str):
+def _ensure_trailing_slash(url: str) -> str:
     """Return url guaranteed to end in a slash"""
     return url if url.endswith("/") else f"{url}/"

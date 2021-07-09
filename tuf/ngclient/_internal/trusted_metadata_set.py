@@ -68,10 +68,10 @@ TODO:
 import logging
 from collections import abc
 from datetime import datetime
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, Mapping, Optional
 
 from tuf import exceptions
-from tuf.api.metadata import Metadata, Root, Targets
+from tuf.api.metadata import Key, Metadata, Root, Targets
 from tuf.api.serialization import DeserializationError
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ def verify_with_threshold(
 ) -> bool:
     """Verify 'unverified' with keys and threshold defined in delegator"""
     role = None
-    keys = {}
+    keys: Mapping[str, Key] = {}
     if isinstance(delegator.signed, Root):
         keys = delegator.signed.keys
         role = delegator.signed.roles.get(role_name)
@@ -133,7 +133,7 @@ class TrustedMetadataSet(abc.Mapping):
             RepositoryError: Metadata failed to load or verify. The actual
                 error type and content will contain more details.
         """
-        self._trusted_set = {}  # type: Dict[str: Metadata]
+        self._trusted_set = {}  # type: Dict[str, Metadata]
         self.reference_time = datetime.utcnow()
         self._root_update_finished = False
 
@@ -152,7 +152,7 @@ class TrustedMetadataSet(abc.Mapping):
 
     def __iter__(self) -> Iterator[Metadata]:
         """Returns iterator over all Metadata objects in TrustedMetadataSet"""
-        return iter(self._trusted_set)
+        return iter(self._trusted_set.values())
 
     # Helper properties for top level metadata
     @property
@@ -176,7 +176,7 @@ class TrustedMetadataSet(abc.Mapping):
         return self._trusted_set.get("targets")
 
     # Methods for updating metadata
-    def update_root(self, data: bytes):
+    def update_root(self, data: bytes) -> None:
         """Verifies and loads 'data' as new root metadata.
 
         Note that an expired intermediate root is considered valid: expiry is
@@ -225,7 +225,7 @@ class TrustedMetadataSet(abc.Mapping):
         self._trusted_set["root"] = new_root
         logger.debug("Updated root")
 
-    def root_update_finished(self):
+    def root_update_finished(self) -> None:
         """Marks root metadata as final and verifies it is not expired
 
         Raises:
@@ -245,7 +245,7 @@ class TrustedMetadataSet(abc.Mapping):
         self._root_update_finished = True
         logger.debug("Verified final root.json")
 
-    def update_timestamp(self, data: bytes):
+    def update_timestamp(self, data: bytes) -> None:
         """Verifies and loads 'data' as new timestamp metadata.
 
         Args:
@@ -302,7 +302,7 @@ class TrustedMetadataSet(abc.Mapping):
         self._trusted_set["timestamp"] = new_timestamp
         logger.debug("Updated timestamp")
 
-    def update_snapshot(self, data: bytes):
+    def update_snapshot(self, data: bytes) -> None:
         """Verifies and loads 'data' as new snapshot metadata.
 
         Args:
@@ -379,7 +379,7 @@ class TrustedMetadataSet(abc.Mapping):
         self._trusted_set["snapshot"] = new_snapshot
         logger.debug("Updated snapshot")
 
-    def update_targets(self, data: bytes):
+    def update_targets(self, data: bytes) -> None:
         """Verifies and loads 'data' as new top-level targets metadata.
 
         Args:
@@ -393,7 +393,7 @@ class TrustedMetadataSet(abc.Mapping):
 
     def update_delegated_targets(
         self, data: bytes, role_name: str, delegator_name: str
-    ):
+    ) -> None:
         """Verifies and loads 'data' as new metadata for target 'role_name'.
 
         Args:
